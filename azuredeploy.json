@@ -211,7 +211,7 @@
                         "createOption": "FromImage",
                         "diskSizeGB": "[variables('osDiskSizeinGB')]",
                         "managedDisk": {
-                            "storageAccountType": "Premium_LRS"
+                            "storageAccountType": "StandardSSD_LRS"
                         }
                     },
                     "copy": [{
@@ -224,7 +224,7 @@
                             "diskSizeGB": "[parameters('dataDiskSizeinGB')]",
                             "caching": "ReadOnly",
                             "managedDisk": {
-                                "storageAccountType": "Premium_LRS"
+                                "storageAccountType": "StandardSSD_LRS"
                             }
                         }
                     }]
