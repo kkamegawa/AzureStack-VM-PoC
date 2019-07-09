@@ -50,11 +50,18 @@ function Write-Log ([string]$Message, [string]$LogFilePath, [switch]$Overwrite)
 function findLatestASDK 
 {
     [CmdletBinding()]
-    Param($asdkURIRoot, [string[]]$asdkFileList, $count = 8)
+    Param(
+        $asdkURIRoot,
+        
+        [string[]]
+        $asdkFileList,
+
+        $count = 8
+    )
     $versionArray = @()
     $versionArrayToTest = @()
     $version = @(Get-Date -Format "yyMM")
-    $suffix = @('-3','-2','-1','')
+    $suffix = @('-40', '-36', '-1','')
     
     for ($i = 0; $i -lt $count; $i++)
     {       
@@ -86,8 +93,20 @@ function findLatestASDK
 }
 
 
-function testASDKFilesPresence ([string]$asdkURIRoot, $version, [array]$asdkfileList) 
+function testASDKFilesPresence 
 {
+    [CmdletBinding()]
+    param(
+        [string]
+        $asdkURIRoot,
+        
+        [string]
+        $version, 
+        
+        [array]
+        $asdkfileList
+    )
+    
     $Uris = @()
 
     foreach ($file in $asdkfileList)
@@ -138,12 +157,24 @@ function ASDKDownloader
 
     if ($Interactive)
     {
-        $versionArray = findLatestASDK -asdkURIRoot $ASDKURIRoot -asdkFileList $AsdkFileList
-        
-        Write-Verbose "Version is now: $Version" -Verbose
+        Write-Verbose "ASDKDownloader Interactive mode enabled" -Verbose
+        Write-Verbose "`$defaultLocalPath is $defaultLocalPath" -Verbose
+        if (Test-Path -Path $defaultLocalPath\testedVersions)
+        {
+            Write-Verbose "found testedVersions information" -Verbose
+            $versionArray = Get-Content $defaultLocalPath\testedVersions
+        }
+        else
+        {
+            Write-Verbose "Calling findLatestASDK since no testedVersions information found" -Verbose
+            $versionArray = findLatestASDK -asdkURIRoot $ASDKURIRoot -asdkFileList $AsdkFileList
+        }
+                
         Write-Verbose "VersionArray is now: $versionArray" -Verbose
+
         if ($null -eq $Version -or $Version -eq "")
         {
+            Write-Verbose "No version info available going into interactive mode" -Verbose
             do
             {
                 Clear-Host
@@ -156,7 +187,6 @@ function ASDKDownloader
                 }
                 Write-Host ""
                 Write-Host -ForegroundColor Yellow -BackgroundColor DarkGray -NoNewline  -Object "Unless it is instructed, select only latest tested ASDK Version "
-                Write-Host -ForegroundColor Green -BackgroundColor DarkGray -Object $gitbranchconfig.lastversiontested
                 Write-Host ""
                 $s = (Read-Host -Prompt "Select ASDK version to install")
                 if ($s -match "\d")
@@ -166,6 +196,11 @@ function ASDKDownloader
             }
             until ($versionArray[$s] -in $versionArray)
             $version = $versionArray[$s]
+        }
+        else
+        {
+            Write-Verbose "Version explicitly specified skipping interactive mode, Version is now: $version" -Verbose
+            Write-Verbose "Version is now: $version" -Verbose    
         }
     }
         $downloadList = testASDKFilesPresence -asdkURIRoot $ASDKURIRoot -version $Version -asdkfileList $AsdkFileList
@@ -330,22 +365,54 @@ function Start-SleepWithProgress($seconds)
 
 function Copy-ASDKContent 
 {
+[CmdletBinding()]    
     param (
         $vhdxFullPath
     )
+    
     $foldersToCopy = @('CloudDeployment', 'fwupdate', 'tools')
 
         try {
-            $driveLetter = Mount-DiskImage -ImagePath $vhdxFullPath -StorageType VHDX -Passthru | Get-DiskImage | Get-Disk | Get-Partition | Where-Object size -gt 500MB | Select-Object -ExpandProperty driveletter
+            Write-Verbose "Mounting the following file $vhdxFullPath"
+            $driveLetter = (Mount-DiskImage -ImagePath $vhdxFullPath -StorageType VHDX -Access ReadWrite -Passthru -ErrorAction Stop | Get-DiskImage | Get-Disk | Get-Partition | Where-Object size -gt 500MB | Get-Volume).DriveLetter
+            Write-Verbose "Source Drive is now mounted as $driveLetter"
+            Write-Verbose "Mounting the drive as psDrive as a workaround"
+            $psDrive = New-PSDrive -Name $driveLetter -PSProvider FileSystem -Root "$($driveLetter):\"
         }
         catch {
             throw "an error occured while mounting cloudbuilder.vhdx file"
         }
-
+        Write-Verbose "List of folder to be copied are $foldersToCopy"
         foreach ($folder in $foldersToCopy)
         {
-            Copy-Item -Path (Join-Path -Path $($driveLetter + ':') -ChildPath $folder) -Destination C:\ -Recurse -Force
+            Write-Verbose "Copying source folder $folder to C:\"
+            $path = "$driveLetter" + ":\" + "$folder"
+            Write-Verbose "Copy source path is now $path\"
+            Copy-Item -Path $path -Destination C:\ -Recurse -Force -PassThru | Write-Verbose
         }
-        Dismount-DiskImage -ImagePath $vhdxFullPath
-        
+        Write-Verbose "Removing psDrive $psDrive"
+        $psDrive | Remove-PSDrive
+        Write-Verbose "Dismounting the drive $driveLetter"
+        Dismount-DiskImage -ImagePath $vhdxFullPath -PassThru | Write-Verbose
+}
+
+function ConvertTo-HashtableFromPsCustomObject { 
+    param ( 
+        [Parameter(  
+            Position = 0,   
+            Mandatory = $true,   
+            ValueFromPipeline = $true,  
+            ValueFromPipelineByPropertyName = $true  
+        )] [object[]]$psCustomObject 
+    ); 
+    
+    process { 
+        foreach ($myPsObject in $psCustomObject) { 
+            $output = @{}; 
+            $myPsObject | Get-Member -MemberType *Property | % { 
+                $output.($_.name) = $myPsObject.($_.name); 
+            } 
+            $output; 
+        } 
+    } 
 }

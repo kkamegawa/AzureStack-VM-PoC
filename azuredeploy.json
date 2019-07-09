@@ -20,9 +20,8 @@
                 "Standard_D64s_v3",
                 "Standard_E64s_v3"
             ],
-            "defaultValue": "Standard_E16s_v3",
             "metadata": {
-                "name": "Standard_E16s_v3"
+                "name": "Standard_E20s_v3"
             }
         },
         "dataDiskSizeinGB": {
@@ -146,7 +145,71 @@
             "metadata": {
                 "name": false
             }
-        },        
+        },
+        "autoInstallASDK": {
+            "defaultValue": false,
+            "allowedValues": [
+                true,
+                false
+            ],
+            "type": "bool",
+            "metadata": {
+                "name": false
+            }
+        },
+        "AzureADTenant": {
+            "defaultValue": "<AzureADTenant>.onmicrosoft.com",
+            "type": "string",
+            "metadata": {
+                "name": "<AzureADTenant>.onmicrosoft.com"
+            }
+        },
+        "AzureADGlobalAdmin": {
+            "defaultValue": "<alias>@<AzureADTenant>.onmicrosoft.com",
+            "type": "string",
+            "metadata": {
+                "name": "<alias>@<AzureADTenant>.onmicrosoft.com"
+            }
+        },
+        "AzureADGlobalAdminPassword": {
+            "type": "securestring",
+            "defaultValue": "1234",
+            "metadata": {
+                "name": "1234"
+            }
+        },
+        "ASDKConfiguratorObject": {
+            "type": "secureObject",
+            "defaultValue": {
+                "command": "configASDK.ps1",
+                "path": "c:\\ConfigASDK",
+                "AutoRun": "false",
+                "ASDKConfiguratorParams": {
+                    "azureDirectoryTenantName": "<AzureADTenant>.onmicrosoft.com",
+                    "authenticationType": "AzureAD",
+                    "downloadPath": "D:\\ASDKfiles",
+                    "ISOPath": "D:\\WS2016EVALISO.iso",
+                    "azureStackAdminPwd": "<password>",
+                    "VMpwd": "<password>",
+                    "AzureADUsername": "<alias>@<AzureADTenant>.onmicrosoft.com",
+                    "azureAdPwd": "<password>",
+                    "registerASDK": "true",
+                    "useAzureCredsForRegistration":"true",
+                    "azureRegSubId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                }
+            }
+        },
+        "enableRDSH": {
+            "type": "bool",
+            "defaultValue": false,
+            "allowedValues": [
+                true,
+                false
+            ],
+            "metadata": {
+                "name": false
+            }
+        },
         "branch": {
             "type": "string",
             "defaultValue": "master",
@@ -159,11 +222,11 @@
             }
         },
         "siteLocation": {
-          "type": "string",
-          "defaultValue": "[resourceGroup().location]",
-          "metadata": {
-              "name": "[resourceGroup().location]"
-          }
+            "type": "string",
+            "defaultValue": "[resourceGroup().location]",
+            "metadata": {
+                "name": "[resourceGroup().location]"
+            }
         }
     },
     "variables": {
@@ -176,14 +239,16 @@
         "osDiskSizeinGB": 256,
         "networkInterfaceName": "[concat(parameters('virtualMachineName'),'-NIC')]",
         "networkSecurityGroupName": "[concat(parameters('virtualMachineName'),'-NSG')]",
-        "publicIpAddressName": "[concat(parameters('virtualMachineName'),'-IP')]"
-            
-        },
+        "publicIpAddressName": "[concat(parameters('virtualMachineName'),'-IP')]",
+        "singleQuote": "'",
+        "autoInstallASDKparameters": "[if(bool(parameters('autoInstallASDK')), concat(' -AutoInstallASDK ',' -AzureADTenant ', parameters('AzureADTenant'), ' -AzureADGlobalAdmin ', parameters('AzureADGlobalAdmin'), ' -AzureADGlobalAdminPass ', parameters('AzureADGlobalAdminPassword'), ' -LocalAdminPass ', parameters('adminPassword')), '')]",
+        "ASDKConfiguratorParameters": "[concat(' -ASDKConfiguratorObject ', variables('singleQuote'), replace(replace(string(parameters('ASDKConfiguratorObject')), '\\', '\\\\'), '\"', '\\\"'), variables('singleQuote'))]"
+    },
     "resources": [
         {
             "name": "[parameters('virtualMachineName')]",
             "type": "Microsoft.Compute/virtualMachines",
-            "apiVersion": "2016-04-30-preview",
+            "apiVersion": "2018-10-01",
             "location": "[parameters('sitelocation')]",
             "dependsOn": [
                 "[concat('Microsoft.Network/networkInterfaces/', variables('networkInterfaceName'))]"
@@ -209,6 +274,7 @@
                     },
                     "osDisk": {
                         "createOption": "FromImage",
+                        "name": "[concat(parameters('virtualMachineName'), '-osdisk')]",
                         "diskSizeGB": "[variables('osDiskSizeinGB')]",
                         "managedDisk": {
                             "storageAccountType": "StandardSSD_LRS"
@@ -227,7 +293,7 @@
                                 "storageAccountType": "StandardSSD_LRS"
                             }
                         }
-                    }]
+                    ]
                 },
                 "networkProfile": {
                     "networkInterfaces": [
@@ -242,7 +308,7 @@
                 {
                     "type": "extensions",
                     "name": "CustomScriptExtension",
-                    "apiVersion": "2016-04-30-preview",
+                    "apiVersion": "2018-10-01",
                     "location": "[parameters('sitelocation')]",
                     "dependsOn": [
                         "[parameters('virtualMachineName')]"
@@ -250,20 +316,20 @@
                     "properties": {
                         "publisher": "Microsoft.Compute",
                         "type": "CustomScriptExtension",
-                        "typeHandlerVersion": "1.8",
+                        "typeHandlerVersion": "1.9",
                         "autoUpgradeMinorVersion": true,
                         "settings": {
                             "fileUris": [
                                 "[variables('fileUri')]"
                             ],
-                            "commandToExecute": "[concat('powershell.exe -ExecutionPolicy Unrestricted -File ', variables('scriptFileName'), ' ', '-Username', ' ', variables('adminUsername'), ' ', '-EnableDownloadASDK', ' ', '-AzureImage', ' ', '-AutoDownloadASDK', ' ', parameters('autoDownloadASDK'))]"
+                            "commandToExecute": "[concat('powershell.exe -ExecutionPolicy Unrestricted -File ', variables('scriptFileName'), ' -Username ', variables('adminUsername'), ' -Branch ', parameters('branch'), ' -EnableDownloadASDK ', ' -AzureImage ', ' -AutoDownloadASDK ', parameters('autoDownloadASDK'), ' -EnableRDSH ', parameters('enableRDSH'), variables('autoInstallASDKparameters'), variables('ASDKConfiguratorParameters'))]"
                         }
                     }
                 },
                 {
                     "type": "Microsoft.DevTestLab/schedules",
                     "name": "[concat('shutdown-computevm-', parameters('virtualMachineName'))]",
-                    "apiVersion": "2017-04-26-preview",
+                    "apiVersion": "2018-09-15",
                     "location": "[parameters('sitelocation')]",
                     "tags": {},
                     "properties": {
@@ -289,7 +355,7 @@
         {
             "name": "[parameters('virtualNetworkName')]",
             "type": "Microsoft.Network/virtualNetworks",
-            "apiVersion": "2016-12-01",
+            "apiVersion": "2018-10-01",
             "location": "[parameters('sitelocation')]",
             "properties": {
                 "addressSpace": {
@@ -310,7 +376,7 @@
         {
             "name": "[variables('networkInterfaceName')]",
             "type": "Microsoft.Network/networkInterfaces",
-            "apiVersion": "2016-09-01",
+            "apiVersion": "2018-10-01",
             "location": "[parameters('sitelocation')]",
             "dependsOn": [
                 "[concat('Microsoft.Network/virtualNetworks/', parameters('virtualNetworkName'))]",
@@ -340,12 +406,12 @@
         {
             "name": "[variables('publicIpAddressName')]",
             "type": "Microsoft.Network/publicIPAddresses",
-            "apiVersion": "2017-06-01",
+            "apiVersion": "2019-02-01",
             "location": "[parameters('sitelocation')]",
             "properties": {
                 "publicIPAllocationMethod": "[parameters('publicIpAddressType')]",
                 "publicIPAddressVersion": "IPv4",
-                "dnsSettings":{
+                "dnsSettings": {
                     "domainNameLabel": "[parameters('publicDnsName')]",
                     "fqdn": "[concat(parameters('publicDnsName'), '.', parameters('sitelocation'), '.cloudapp.azure.com')]"
                 }
@@ -354,7 +420,7 @@
         {
             "name": "[variables('networkSecurityGroupName')]",
             "type": "Microsoft.Network/networkSecurityGroups",
-            "apiVersion": "2016-09-01",
+            "apiVersion": "2019-02-01",
             "location": "[parameters('sitelocation')]",
             "properties": {
                 "securityRules": [
@@ -387,7 +453,7 @@
                 ]
             }
         }
-        ],
+    ],
     "outputs": {
         "adminUsername": {
             "type": "string",
